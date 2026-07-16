@@ -1,0 +1,15 @@
+endpoints:
+  openai:
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+
+targets:
+  gpt-5.4-nano:
+    endpoint: openai
+    model: gpt-5.4-nano
+    format: openai
+
+profiles:
+  demo:
+    type: passthrough
+    target: gpt-5.4-nano
