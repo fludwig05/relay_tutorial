@@ -3,13 +3,24 @@ endpoints:
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
 
+  nvidia:
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key: ${NVIDIA_API_KEY}
+
 targets:
   gpt-5.4-nano:
     endpoint: openai
-    model: gpt-5.4-nano
     format: openai
+    model: gpt-5.4-nano
+    
+
+  nemotron-nano-9b-v2:
+    endpoint: nvidia
+    format: openai
+    model: nvidia/nvidia-nemotron-nano-9b-v2
+    
 
 profiles:
   demo:
     type: passthrough
-    target: gpt-5.4-nano
+    target: nemotron-nano-9b-v2  # gpt-5.4-nano
