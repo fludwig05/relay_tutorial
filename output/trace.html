@@ -1,0 +1,4189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+    <title>Agent Trace</title>
+
+    <style>
+        :root {
+            color-scheme: light dark;
+
+            --page-background: #f4f6f8;
+            --card-background: #ffffff;
+            --card-border: #dfe3e8;
+            --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+
+            --text-primary: #172033;
+            --text-secondary: #667085;
+            --text-muted: #98a2b3;
+
+            --agent-color: #7c3aed;
+            --agent-background: #f5f3ff;
+
+            --llm-color: #2563eb;
+            --llm-background: #eff6ff;
+
+            --tool-color: #059669;
+            --tool-background: #ecfdf5;
+
+            --generic-color: #64748b;
+            --generic-background: #f8fafc;
+
+            --connector-color: #cbd5e1;
+            --code-background: #101828;
+            --code-text: #e4e7ec;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --page-background: #0b0f17;
+                --card-background: #131a25;
+                --card-border: #263244;
+                --card-shadow: none;
+
+                --text-primary: #f2f4f7;
+                --text-secondary: #98a2b3;
+                --text-muted: #667085;
+
+                --agent-background: rgba(124, 58, 237, 0.14);
+                --llm-background: rgba(37, 99, 235, 0.14);
+                --tool-background: rgba(5, 150, 105, 0.14);
+                --generic-background: rgba(100, 116, 139, 0.12);
+
+                --connector-color: #344054;
+                --code-background: #070b12;
+                --code-text: #d0d5dd;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--page-background);
+            color: var(--text-primary);
+            font-family:
+                Inter,
+                ui-sans-serif,
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .page {
+            width: min(1100px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 40px 0 80px;
+        }
+
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-title {
+            margin: 0;
+            font-size: 30px;
+            font-weight: 720;
+            letter-spacing: -0.03em;
+        }
+
+        .page-subtitle {
+            margin: 8px 0 0;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .trace-root {
+            margin-bottom: 22px;
+        }
+
+        .trace-node {
+            position: relative;
+        }
+
+        .node-card {
+            position: relative;
+            overflow: hidden;
+            background: var(--card-background);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .node-card::before {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 4px;
+            content: "";
+            background: var(--generic-color);
+        }
+
+        .node-card.agent::before {
+            background: var(--agent-color);
+        }
+
+        .node-card.llm::before {
+            background: var(--llm-color);
+        }
+
+        .node-card.tool::before {
+            background: var(--tool-color);
+        }
+
+        .node-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 54px;
+            padding: 12px 16px 12px 19px;
+        }
+
+        .node-icon {
+            display: grid;
+            flex: 0 0 auto;
+            width: 32px;
+            height: 32px;
+            place-items: center;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        .node-icon.agent {
+            color: var(--agent-color);
+            background: var(--agent-background);
+        }
+
+        .node-icon.llm {
+            color: var(--llm-color);
+            background: var(--llm-background);
+        }
+
+        .node-icon.tool {
+            color: var(--tool-color);
+            background: var(--tool-background);
+        }
+
+        .node-icon.generic {
+            color: var(--generic-color);
+            background: var(--generic-background);
+        }
+
+        .node-heading {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .node-name {
+            overflow: hidden;
+            margin: 0;
+            font-size: 14px;
+            font-weight: 680;
+            line-height: 1.4;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .node-type {
+            margin-top: 2px;
+            color: var(--text-secondary);
+            font-family:
+                ui-monospace,
+                SFMono-Regular,
+                Menlo,
+                Monaco,
+                Consolas,
+                monospace;
+            font-size: 11px;
+        }
+
+        .node-fields {
+            display: grid;
+            gap: 10px;
+            padding: 0 16px 16px 19px;
+        }
+
+        details.data-panel {
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+        }
+
+        details.data-panel > summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 11px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 650;
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+
+        details.data-panel > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.data-panel > summary::before {
+            content: "›";
+            color: var(--text-muted);
+            font-size: 18px;
+            line-height: 10px;
+            transform-origin: center;
+            transition: transform 120ms ease;
+        }
+
+        details.data-panel[open] > summary::before {
+            transform: rotate(90deg);
+        }
+
+        .field-size {
+            margin-left: auto;
+            color: var(--text-muted);
+            font-family:
+                ui-monospace,
+                SFMono-Regular,
+                Menlo,
+                Monaco,
+                Consolas,
+                monospace;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        pre {
+            overflow-x: auto;
+            max-height: 520px;
+            margin: 0;
+            padding: 14px;
+            background: var(--code-background);
+            color: var(--code-text);
+            font-family:
+                ui-monospace,
+                SFMono-Regular,
+                Menlo,
+                Monaco,
+                Consolas,
+                monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .children {
+            position: relative;
+            display: grid;
+            gap: 12px;
+            margin: 12px 0 0 26px;
+            padding-left: 24px;
+        }
+
+        .children::before {
+            position: absolute;
+            top: 0;
+            bottom: 18px;
+            left: 5px;
+            width: 1px;
+            content: "";
+            background: var(--connector-color);
+        }
+
+        .children > .trace-node::before {
+            position: absolute;
+            top: 27px;
+            left: -19px;
+            width: 19px;
+            height: 1px;
+            content: "";
+            background: var(--connector-color);
+        }
+
+        .status-badge {
+            flex: 0 0 auto;
+            padding: 4px 7px;
+            border-radius: 999px;
+            background: var(--generic-background);
+            color: var(--text-secondary);
+            font-family:
+                ui-monospace,
+                SFMono-Regular,
+                Menlo,
+                Monaco,
+                Consolas,
+                monospace;
+            font-size: 10px;
+            font-weight: 650;
+        }
+
+        .status-badge.success {
+            color: var(--tool-color);
+            background: var(--tool-background);
+        }
+
+        .status-badge.error {
+            color: #dc2626;
+            background: rgba(220, 38, 38, 0.1);
+        }
+
+        .empty-state {
+            padding: 60px 20px;
+            color: var(--text-secondary);
+            text-align: center;
+            background: var(--card-background);
+            border: 1px dashed var(--card-border);
+            border-radius: 12px;
+        }
+
+        @media (max-width: 640px) {
+            .page {
+                width: min(100% - 20px, 1100px);
+                padding-top: 24px;
+            }
+
+            .children {
+                margin-left: 11px;
+                padding-left: 17px;
+            }
+
+            .children > .trace-node::before {
+                left: -12px;
+                width: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <header class="page-header">
+            <h1 class="page-title">Agent Trace</h1>
+            <p class="page-subtitle">
+                Semantic execution trace with framework internals removed.
+            </p>
+        </header>
+
+        <section class="trace-list">
+            
+        <article
+            class="trace-node trace-root"
+            data-node-id="019f720d-b570-7fa2-956f-9171ad48da48"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;thread_id&quot;: &quot;thread_1&quot;,
+  &quot;user_id&quot;: &quot;user_1&quot;,
+  &quot;user_input&quot;: &quot;Hi! I am Florian.&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;assistant_response&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-b577-7793-a0a0-e7ec1678f4dd"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    8 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    61 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-b57b-77a3-95ea-70af2ccc139e"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    20 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    55 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;stop&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 122,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 351,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 473
+                    }
+                  },
+                  &quot;tool_calls&quot;: [],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 351,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 122,
+                    &quot;total_tokens&quot;: 473
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-b57d-7881-befd-3875d5d60af5"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge success">complete</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    13 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    10 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+  &quot;tool_calls&quot;: [],
+  &quot;finish_reason&quot;: &quot;complete&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 122,
+    &quot;prompt_tokens&quot;: 351,
+    &quot;total_tokens&quot;: 473
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node trace-root"
+            data-node-id="019f720d-e3e6-79c2-bcaf-256581781895"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;thread_id&quot;: &quot;thread_1&quot;,
+  &quot;user_id&quot;: &quot;user_1&quot;,
+  &quot;user_input&quot;: &quot;Did you save my name?&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;assistant_response&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-e3e7-7f63-9aba-a10319ed22c9"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    8 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    175 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 198,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 430,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 628
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 430,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 198,
+              &quot;total_tokens&quot;: 628
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-e3eb-7bb2-9913-9a22fa9711ac"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    77 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    62 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 540,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 376,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 916
+                    }
+                  },
+                  &quot;tool_calls&quot;: [
+                    {
+                      &quot;args&quot;: {},
+                      &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                      &quot;name&quot;: &quot;get_user_information&quot;,
+                      &quot;type&quot;: &quot;tool_call&quot;
+                    }
+                  ],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 376,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 540,
+                    &quot;total_tokens&quot;: 916
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720d-e3ed-7742-9055-481542e8458c"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM (tool_use)</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge ">tool_use</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    22 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    16 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;&quot;,
+  &quot;tool_calls&quot;: [
+    {
+      &quot;arguments&quot;: {},
+      &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+      &quot;name&quot;: &quot;get_user_information&quot;
+    }
+  ],
+  &quot;finish_reason&quot;: &quot;tool_use&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 540,
+    &quot;prompt_tokens&quot;: 376,
+    &quot;total_tokens&quot;: 916
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node "
+            data-node-id="019f720e-15c0-71b2-89a5-662ed4118a93"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    8 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;args&quot;: {},
+    &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+    &quot;name&quot;: &quot;get_user_information&quot;,
+    &quot;type&quot;: &quot;tool_call&quot;
+  }
+]</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    13 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-15c3-7e41-87bf-dede2cb9f982"
+            data-node-type="tool"
+        >
+            <div class="node-card tool">
+                <div class="node-header">
+                    <div class="node-icon tool">
+                        T
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">get_user_information</h2>
+                        <div class="node-type">tool</div>
+                    </div>
+
+                    <span class="status-badge success">success</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    1 line
+                </span>
+            </summary>
+
+            <pre>{}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;result&quot;: &quot;No information has been saved.&quot;,
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node "
+            data-node-id="019f720e-15c8-7723-afe7-73ed56e2b75c"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    134 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    55 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;stop&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 198,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 430,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 628
+                    }
+                  },
+                  &quot;tool_calls&quot;: [],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 430,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 198,
+                    &quot;total_tokens&quot;: 628
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-15cb-7bc1-995a-d6a8eaa01c69"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge success">complete</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    41 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{}&quot;,
+            &quot;name&quot;: &quot;get_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;No information has been saved.&quot;,
+      &quot;role&quot;: &quot;tool&quot;,
+      &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    10 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+  &quot;tool_calls&quot;: [],
+  &quot;finish_reason&quot;: &quot;complete&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 198,
+    &quot;prompt_tokens&quot;: 430,
+    &quot;total_tokens&quot;: 628
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node trace-root"
+            data-node-id="019f720e-4c26-7632-aa7a-26c40fb98cd5"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;thread_id&quot;: &quot;thread_1&quot;,
+  &quot;user_id&quot;: &quot;user_1&quot;,
+  &quot;user_input&quot;: &quot;Yes!&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    1 line
+                </span>
+            </summary>
+
+            <pre>{}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-4c27-7ad2-bc1e-905692ca8d70"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    8 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;Yes!&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;error&quot;: &quot;RuntimeError(\&quot;internal error: AttributeError: &#x27;ToolRuntime&#x27; object has no attribute &#x27;scope_handle&#x27;\&quot;)&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-4c2a-73e0-9017-3ef684558dd3"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    191 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 198,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 430,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 628
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 430,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 198,
+              &quot;total_tokens&quot;: 628
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Yes!&quot;,
+            &quot;id&quot;: &quot;e359f9db-ce65-4f7e-b8ab-7d987ef7efc4&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    65 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720e-4c2f-7d50-97b7-62fda069aae4-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-bed9a65bf5a9fce0&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 127,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 467,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 594
+                    }
+                  },
+                  &quot;tool_calls&quot;: [
+                    {
+                      &quot;args&quot;: {
+                        &quot;information_name&quot;: &quot;name&quot;,
+                        &quot;information_value&quot;: &quot;Florian&quot;
+                      },
+                      &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+                      &quot;name&quot;: &quot;save_user_information&quot;,
+                      &quot;type&quot;: &quot;tool_call&quot;
+                    }
+                  ],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 467,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 127,
+                    &quot;total_tokens&quot;: 594
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-4c2d-7fa2-8f15-3b634a6424ea"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM (tool_use)</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge ">tool_use</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    50 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{}&quot;,
+            &quot;name&quot;: &quot;get_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;No information has been saved.&quot;,
+      &quot;role&quot;: &quot;tool&quot;,
+      &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Yes!&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    19 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;&quot;,
+  &quot;tool_calls&quot;: [
+    {
+      &quot;arguments&quot;: {
+        &quot;information_name&quot;: &quot;name&quot;,
+        &quot;information_value&quot;: &quot;Florian&quot;
+      },
+      &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+      &quot;name&quot;: &quot;save_user_information&quot;
+    }
+  ],
+  &quot;finish_reason&quot;: &quot;tool_use&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 127,
+    &quot;prompt_tokens&quot;: 467,
+    &quot;total_tokens&quot;: 594
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node "
+            data-node-id="019f720e-57ac-7810-b324-e9a35a62e1e6"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    11 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;args&quot;: {
+      &quot;information_name&quot;: &quot;name&quot;,
+      &quot;information_value&quot;: &quot;Florian&quot;
+    },
+    &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+    &quot;name&quot;: &quot;save_user_information&quot;,
+    &quot;type&quot;: &quot;tool_call&quot;
+  }
+]</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;error&quot;: &quot;RuntimeError(\&quot;internal error: AttributeError: &#x27;ToolRuntime&#x27; object has no attribute &#x27;scope_handle&#x27;\&quot;)&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-57ae-7753-beb1-57e91fd9521b"
+            data-node-type="tool"
+        >
+            <div class="node-card tool">
+                <div class="node-header">
+                    <div class="node-icon tool">
+                        T
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">save_user_information</h2>
+                        <div class="node-type">tool</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    4 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;information_name&quot;: &quot;name&quot;,
+  &quot;information_value&quot;: &quot;Florian&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;result&quot;: null,
+  &quot;status&quot;: null,
+  &quot;tool_call_id&quot;: null
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node trace-root"
+            data-node-id="019f720e-861f-7260-a9f3-4c62b827f271"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;thread_id&quot;: &quot;thread_1&quot;,
+  &quot;user_id&quot;: &quot;user_1&quot;,
+  &quot;user_input&quot;: &quot;What is the whether in munich?&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;assistant_response&quot;: &quot;\n\nThe weather in Munich is currently snowy. Let me know if you&#x27;d like additional details or updates!\n&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-8620-7ce3-8d48-548a3729e9bf"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    8 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    358 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 198,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 430,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 628
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 430,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 198,
+              &quot;total_tokens&quot;: 628
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Yes!&quot;,
+            &quot;id&quot;: &quot;e359f9db-ce65-4f7e-b8ab-7d987ef7efc4&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-4c2f-7d50-97b7-62fda069aae4-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-bed9a65bf5a9fce0&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 127,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 467,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 594
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {
+                  &quot;information_name&quot;: &quot;name&quot;,
+                  &quot;information_value&quot;: &quot;Florian&quot;
+                },
+                &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+                &quot;name&quot;: &quot;save_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 467,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 127,
+              &quot;total_tokens&quot;: 594
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+            &quot;id&quot;: &quot;dc5864bb-72d0-49bd-8300-8c4872530a87&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-862c-71b0-9a43-a77efcb5db19-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-bdead84efb3cdc10&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 150,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 522,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 672
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {
+                  &quot;city&quot;: &quot;Munich&quot;
+                },
+                &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+                &quot;name&quot;: &quot;get_current_weather&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 522,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 150,
+              &quot;total_tokens&quot;: 672
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;The weather in Munich is snowy.&quot;,
+        &quot;id&quot;: &quot;fe9e28e3-41d9-4327-b2c0-1e8f89b0d9bb&quot;,
+        &quot;name&quot;: &quot;get_current_weather&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nThe weather in Munich is currently snowy. Let me know if you&#x27;d like additional details or updates!\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-961b-7de1-8491-474cf700fb03-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b097cd8e1f392284&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 190,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 584,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 774
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 584,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 190,
+              &quot;total_tokens&quot;: 774
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-8625-7e90-92e0-cd13c332063f"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    258 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 198,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 430,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 628
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 430,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 198,
+              &quot;total_tokens&quot;: 628
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Yes!&quot;,
+            &quot;id&quot;: &quot;e359f9db-ce65-4f7e-b8ab-7d987ef7efc4&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-4c2f-7d50-97b7-62fda069aae4-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-bed9a65bf5a9fce0&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 127,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 467,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 594
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {
+                  &quot;information_name&quot;: &quot;name&quot;,
+                  &quot;information_value&quot;: &quot;Florian&quot;
+                },
+                &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+                &quot;name&quot;: &quot;save_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 467,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 127,
+              &quot;total_tokens&quot;: 594
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+            &quot;id&quot;: &quot;dc5864bb-72d0-49bd-8300-8c4872530a87&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    64 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720e-862c-71b0-9a43-a77efcb5db19-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-bdead84efb3cdc10&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 150,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 522,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 672
+                    }
+                  },
+                  &quot;tool_calls&quot;: [
+                    {
+                      &quot;args&quot;: {
+                        &quot;city&quot;: &quot;Munich&quot;
+                      },
+                      &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+                      &quot;name&quot;: &quot;get_current_weather&quot;,
+                      &quot;type&quot;: &quot;tool_call&quot;
+                    }
+                  ],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 522,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 150,
+                    &quot;total_tokens&quot;: 672
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-8629-7c91-809b-e52ba5b09f90"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM (tool_use)</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge ">tool_use</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    68 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{}&quot;,
+            &quot;name&quot;: &quot;get_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;No information has been saved.&quot;,
+      &quot;role&quot;: &quot;tool&quot;,
+      &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Yes!&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{\&quot;information_name\&quot;: \&quot;name\&quot;, \&quot;information_value\&quot;: \&quot;Florian\&quot;}&quot;,
+            &quot;name&quot;: &quot;save_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    18 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;&quot;,
+  &quot;tool_calls&quot;: [
+    {
+      &quot;arguments&quot;: {
+        &quot;city&quot;: &quot;Munich&quot;
+      },
+      &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+      &quot;name&quot;: &quot;get_current_weather&quot;
+    }
+  ],
+  &quot;finish_reason&quot;: &quot;tool_use&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 150,
+    &quot;prompt_tokens&quot;: 522,
+    &quot;total_tokens&quot;: 672
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node "
+            data-node-id="019f720e-960f-74c0-9875-33dc01e4b78c"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    10 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;args&quot;: {
+      &quot;city&quot;: &quot;Munich&quot;
+    },
+    &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+    &quot;name&quot;: &quot;get_current_weather&quot;,
+    &quot;type&quot;: &quot;tool_call&quot;
+  }
+]</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    13 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;The weather in Munich is snowy.&quot;,
+        &quot;id&quot;: &quot;fe9e28e3-41d9-4327-b2c0-1e8f89b0d9bb&quot;,
+        &quot;name&quot;: &quot;get_current_weather&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-9612-7100-bd5e-3b65e5574f44"
+            data-node-type="tool"
+        >
+            <div class="node-card tool">
+                <div class="node-header">
+                    <div class="node-icon tool">
+                        T
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">get_current_weather</h2>
+                        <div class="node-type">tool</div>
+                    </div>
+
+                    <span class="status-badge success">success</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    3 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;city&quot;: &quot;Munich&quot;
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    5 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;result&quot;: &quot;The weather in Munich is snowy.&quot;,
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;tool_call_id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+
+        <article
+            class="trace-node "
+            data-node-id="019f720e-9616-77b1-9929-f988a0712ecd"
+            data-node-type="agent"
+        >
+            <div class="node-card agent">
+                <div class="node-header">
+                    <div class="node-icon agent">
+                        A
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">Agent</h2>
+                        <div class="node-type">agent</div>
+                    </div>
+
+                    
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    317 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;messages&quot;: [
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+            &quot;id&quot;: &quot;b58b53f0-70a9-4a6a-ac22-0500b8a5cf2f&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-b583-7691-a0a9-f6effc75f689-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-b86d1c09f4b5cd0a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 122,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 351,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 473
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 351,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 122,
+              &quot;total_tokens&quot;: 473
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Did you save my name?&quot;,
+            &quot;id&quot;: &quot;0563c2a2-8273-492e-95b1-a30306a874da&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720d-e3ef-77c0-a225-dc936fdd7fcf-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-a04e9e2e5f634cf8&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 540,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 376,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 916
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {},
+                &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+                &quot;name&quot;: &quot;get_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 376,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 540,
+              &quot;total_tokens&quot;: 916
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;No information has been saved.&quot;,
+        &quot;id&quot;: &quot;2506abff-ece8-4a6d-892c-6aa0f361f9f3&quot;,
+        &quot;name&quot;: &quot;get_user_information&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-15cd-7f43-b7e5-e4c6f4b6f05e-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;stop&quot;,
+              &quot;id&quot;: &quot;chatcmpl-866708237870689a&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 198,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 430,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 628
+              }
+            },
+            &quot;tool_calls&quot;: [],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 430,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 198,
+              &quot;total_tokens&quot;: 628
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;Yes!&quot;,
+            &quot;id&quot;: &quot;e359f9db-ce65-4f7e-b8ab-7d987ef7efc4&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-4c2f-7d50-97b7-62fda069aae4-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-bed9a65bf5a9fce0&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 127,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 467,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 594
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {
+                  &quot;information_name&quot;: &quot;name&quot;,
+                  &quot;information_value&quot;: &quot;Florian&quot;
+                },
+                &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+                &quot;name&quot;: &quot;save_user_information&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 467,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 127,
+              &quot;total_tokens&quot;: 594
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {},
+            &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+            &quot;id&quot;: &quot;dc5864bb-72d0-49bd-8300-8c4872530a87&quot;,
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {},
+            &quot;type&quot;: &quot;human&quot;
+          },
+          &quot;type&quot;: &quot;human&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;message&quot;: [
+        {
+          &quot;data&quot;: {
+            &quot;additional_kwargs&quot;: {
+              &quot;refusal&quot;: null
+            },
+            &quot;content&quot;: &quot;&quot;,
+            &quot;id&quot;: &quot;lc_run--019f720e-862c-71b0-9a43-a77efcb5db19-0&quot;,
+            &quot;invalid_tool_calls&quot;: [],
+            &quot;name&quot;: null,
+            &quot;response_metadata&quot;: {
+              &quot;finish_reason&quot;: &quot;tool_calls&quot;,
+              &quot;id&quot;: &quot;chatcmpl-bdead84efb3cdc10&quot;,
+              &quot;logprobs&quot;: null,
+              &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+              &quot;model_provider&quot;: &quot;openai&quot;,
+              &quot;system_fingerprint&quot;: null,
+              &quot;token_usage&quot;: {
+                &quot;completion_tokens&quot;: 150,
+                &quot;completion_tokens_details&quot;: null,
+                &quot;prompt_tokens&quot;: 522,
+                &quot;prompt_tokens_details&quot;: null,
+                &quot;total_tokens&quot;: 672
+              }
+            },
+            &quot;tool_calls&quot;: [
+              {
+                &quot;args&quot;: {
+                  &quot;city&quot;: &quot;Munich&quot;
+                },
+                &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+                &quot;name&quot;: &quot;get_current_weather&quot;,
+                &quot;type&quot;: &quot;tool_call&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;ai&quot;,
+            &quot;usage_metadata&quot;: {
+              &quot;input_token_details&quot;: {},
+              &quot;input_tokens&quot;: 522,
+              &quot;output_token_details&quot;: {},
+              &quot;output_tokens&quot;: 150,
+              &quot;total_tokens&quot;: 672
+            }
+          },
+          &quot;type&quot;: &quot;ai&quot;
+        }
+      ],
+      &quot;type&quot;: &quot;message&quot;
+    },
+    {
+      &quot;tool_call&quot;: {
+        &quot;content&quot;: &quot;The weather in Munich is snowy.&quot;,
+        &quot;id&quot;: &quot;fe9e28e3-41d9-4327-b2c0-1e8f89b0d9bb&quot;,
+        &quot;name&quot;: &quot;get_current_weather&quot;,
+        &quot;tool_call_id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;
+      },
+      &quot;type&quot;: &quot;tool_message&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    55 lines
+                </span>
+            </summary>
+
+            <pre>[
+  {
+    &quot;command&quot;: {
+      &quot;goto&quot;: [],
+      &quot;graph&quot;: null,
+      &quot;resume&quot;: null,
+      &quot;update&quot;: {
+        &quot;messages&quot;: [
+          {
+            &quot;message&quot;: [
+              {
+                &quot;data&quot;: {
+                  &quot;additional_kwargs&quot;: {
+                    &quot;refusal&quot;: null
+                  },
+                  &quot;content&quot;: &quot;\n\nThe weather in Munich is currently snowy. Let me know if you&#x27;d like additional details or updates!\n&quot;,
+                  &quot;id&quot;: &quot;lc_run--019f720e-961b-7de1-8491-474cf700fb03-0&quot;,
+                  &quot;invalid_tool_calls&quot;: [],
+                  &quot;name&quot;: null,
+                  &quot;response_metadata&quot;: {
+                    &quot;finish_reason&quot;: &quot;stop&quot;,
+                    &quot;id&quot;: &quot;chatcmpl-b097cd8e1f392284&quot;,
+                    &quot;logprobs&quot;: null,
+                    &quot;model_name&quot;: &quot;nvidia/nvidia-nemotron-nano-9b-v2&quot;,
+                    &quot;model_provider&quot;: &quot;openai&quot;,
+                    &quot;system_fingerprint&quot;: null,
+                    &quot;token_usage&quot;: {
+                      &quot;completion_tokens&quot;: 190,
+                      &quot;completion_tokens_details&quot;: null,
+                      &quot;prompt_tokens&quot;: 584,
+                      &quot;prompt_tokens_details&quot;: null,
+                      &quot;total_tokens&quot;: 774
+                    }
+                  },
+                  &quot;tool_calls&quot;: [],
+                  &quot;type&quot;: &quot;ai&quot;,
+                  &quot;usage_metadata&quot;: {
+                    &quot;input_token_details&quot;: {},
+                    &quot;input_tokens&quot;: 584,
+                    &quot;output_token_details&quot;: {},
+                    &quot;output_tokens&quot;: 190,
+                    &quot;total_tokens&quot;: 774
+                  }
+                },
+                &quot;type&quot;: &quot;ai&quot;
+              }
+            ],
+            &quot;type&quot;: &quot;message&quot;
+          }
+        ]
+      }
+    },
+    &quot;type&quot;: &quot;command&quot;
+  }
+]</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+            <div class="children">
+                
+        <article
+            class="trace-node "
+            data-node-id="019f720e-9619-75e0-a56d-78ccbbada96d"
+            data-node-type="llm"
+        >
+            <div class="node-card llm">
+                <div class="node-header">
+                    <div class="node-icon llm">
+                        L
+                    </div>
+
+                    <div class="node-heading">
+                        <h2 class="node-name">LLM</h2>
+                        <div class="node-type">llm</div>
+                    </div>
+
+                    <span class="status-badge success">complete</span>
+                </div>
+
+                
+            <div class="node-fields">
+                
+        <details class="data-panel">
+            <summary>
+                Input
+                <span class="field-size">
+                    87 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;model&quot;: &quot;demo&quot;,
+  &quot;messages&quot;: [
+    {
+      &quot;content&quot;: &quot;You are a helpful assistant that can save and retrieve information for the current user.&quot;,
+      &quot;role&quot;: &quot;system&quot;
+    },
+    {
+      &quot;content&quot;: &quot;Hi! I am Florian.&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nHello, Florian! How can I assist you today?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Did you save my name?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{}&quot;,
+            &quot;name&quot;: &quot;get_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;No information has been saved.&quot;,
+      &quot;role&quot;: &quot;tool&quot;,
+      &quot;tool_call_id&quot;: &quot;chatcmpl-tool-b9ee1150aecfc462&quot;
+    },
+    {
+      &quot;content&quot;: &quot;\n\nYou&#x27;re correct, I haven&#x27;t saved your name yet. Would you like me to save \&quot;Florian\&quot; as your name information?\n&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: []
+    },
+    {
+      &quot;content&quot;: &quot;Yes!&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{\&quot;information_name\&quot;: \&quot;name\&quot;, \&quot;information_value\&quot;: \&quot;Florian\&quot;}&quot;,
+            &quot;name&quot;: &quot;save_user_information&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-9a52c5abf1f52e97&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;What is the whether in munich?&quot;,
+      &quot;role&quot;: &quot;user&quot;
+    },
+    {
+      &quot;content&quot;: &quot;&quot;,
+      &quot;role&quot;: &quot;assistant&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;function&quot;: {
+            &quot;arguments&quot;: &quot;{\&quot;city\&quot;: \&quot;Munich\&quot;}&quot;,
+            &quot;name&quot;: &quot;get_current_weather&quot;
+          },
+          &quot;id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;,
+          &quot;type&quot;: &quot;function&quot;
+        }
+      ]
+    },
+    {
+      &quot;content&quot;: &quot;The weather in Munich is snowy.&quot;,
+      &quot;role&quot;: &quot;tool&quot;,
+      &quot;tool_call_id&quot;: &quot;chatcmpl-tool-93f87d7178346b9c&quot;
+    }
+  ]
+}</pre>
+        </details>
+    
+        <details class="data-panel">
+            <summary>
+                Output
+                <span class="field-size">
+                    10 lines
+                </span>
+            </summary>
+
+            <pre>{
+  &quot;message&quot;: &quot;\n\nThe weather in Munich is currently snowy. Let me know if you&#x27;d like additional details or updates!\n&quot;,
+  &quot;tool_calls&quot;: [],
+  &quot;finish_reason&quot;: &quot;complete&quot;,
+  &quot;usage&quot;: {
+    &quot;completion_tokens&quot;: 190,
+    &quot;prompt_tokens&quot;: 584,
+    &quot;total_tokens&quot;: 774
+  }
+}</pre>
+        </details>
+    
+            </div>
+        
+            </div>
+
+            
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+            </div>
+        
+        </article>
+    
+        </section>
+    </main>
+</body>
+</html>
