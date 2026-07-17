@@ -15,7 +15,7 @@ def extract_agent(scope: Scope) -> TraceNode:
         id=scope.uuid,
         parent_id=scope.parent_uuid,
         type="agent",
-        name="Agent",
+        name=scope.name,          # <-- preserve original name
     )
 
     if scope.start_event:

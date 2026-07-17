@@ -50,21 +50,17 @@ def _simplify(node: TraceNode) -> None:
 
     # Rename semantic nodes
     for child in node.children:
+        if child.type == "agent" and child.name == "agent-turn":
+            child.name = "Agent"
 
-        if child.type == "llm":
-            finish = None
+        elif child.type == "llm":
+            finish = (child.output or {}).get("finish_reason")
 
-            if child.output is not None:
-                finish = child.output.get("finish_reason")
-
-            if finish == "tool_use":
-                child.name = "LLM (tool_use)"
-            else:
-                child.name = "LLM"
-
-        elif child.type == "tool":
-            # Keep the tool name (e.g. get_current_weather)
-            pass
+            child.name = (
+                "LLM (tool_use)"
+                if finish == "tool_use"
+                else "LLM"
+            )
 
     # Attach tools underneath the LLM that requested them
     node.children = _attach_tools(node.children)
@@ -72,7 +68,8 @@ def _simplify(node: TraceNode) -> None:
 
 def _flatten(children: list[TraceNode]) -> list[TraceNode]:
     """
-    Remove framework nodes while preserving their children.
+    Recursively remove framework nodes while preserving
+    the semantic nodes beneath them.
     """
 
     flattened = []
@@ -80,8 +77,8 @@ def _flatten(children: list[TraceNode]) -> list[TraceNode]:
     for child in children:
 
         if child.name in FRAMEWORK_NODES:
-            flattened.extend(child.children)
-
+            # recurse into the promoted children
+            flattened.extend(_flatten(child.children))
         else:
             flattened.append(child)
 

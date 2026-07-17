@@ -134,7 +134,7 @@ if __name__ == "__main__":
 
     trace_roots = [simplify(build_trace_tree(root)) for root in roots]
 
-    for trace in trace_roots:
-        print_trace(trace)
+    #for trace in trace_roots:
+    #    print_trace(trace)
 
-    # output_path = write_trace_html(trace_roots,Path("output") / "trace.html", title="Agent Trace")
+    output_path = write_trace_html(trace_roots,Path("output") / "trace.html", title="Agent Trace")
