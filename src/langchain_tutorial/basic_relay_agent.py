@@ -16,7 +16,7 @@ from langchain.agents import create_agent
 from dataclasses import dataclass
 from dotenv import load_dotenv
 import asyncio
-
+import time
 
 
 @dataclass
@@ -41,7 +41,12 @@ def save_user_information(information_name: str, information_value: str, runtime
     namespace = ("users", user_id, "information")
 
     runtime.store.put(namespace, information_name, {"value": information_value})
-    return f"Saved information: {information_name} = {information_value}"    
+
+    # send an event that the memory has been updated
+    nemo_relay.scope.event("memory.updated", handle=runtime.scope_handle,
+                           data={"user_id": user_id, "key": information_name})
+
+    return f"Saved information: {information_name}"   
 
 
 @tool
@@ -114,23 +119,50 @@ def agent_loop(agent, user_id):
         # create the context
         context = Context(user_id=user_id)
 
+        # create a scope input
+        scope_input = {"thread_id": current_thread, "user_id": user_id, "user_input": user_input}
+
+        # push a scope for the agent turn
+        scope_handle = nemo_relay.scope.push("agent-turn", nemo_relay.ScopeType.Agent, input=scope_input)
+
+        # initialize the response and error
+        response, error = None, None
+
         try:
 
-            # create a scope input
-            scope_input = {"thread_id": current_thread, "user_id": user_id, "user_input": user_input}
-
-            # create a scope for the agent turn
-            with nemo_relay.scope.scope("agent-turn", nemo_relay.ScopeType.Agent, input=scope_input):
+                # send an event that the agent input has been received
+                nemo_relay.scope.event("agent.input.received", handle=scope_handle)
 
                 # run the agent
                 response = agent.invoke(create_user_message(user_input), context=context, 
                                         config={**memory_config, "callbacks": [NemoRelayCallbackHandler()]})
             
                 final_message = response["messages"][-1]
-                print(f"Assistant: {final_message.content}\n")
+                print(f"Assistant: {final_message.content}\n")  
+
+                # send an event that the agent response has been generated
+                nemo_relay.scope.event("agent.response.generated", handle=scope_handle)           
 
         except Exception as exc:
-            print(f"Error while running the agent: {exc}\n")
+
+            # send an event that the agent failed
+            nemo_relay.scope.event("agent.failed", handle=scope_handle, data={"error": str(exc)})
+
+        finally:
+
+            # initialize the output
+            output = {}
+
+            # set the output
+            if response is not None:
+                output["assistant_response"] = response["messages"][-1].content
+
+            # set the error
+            if error is not None:
+                output["error"] = error
+
+            # pop the scope and set the output
+            nemo_relay.scope.pop(scope_handle, output=output)   
 
 
 async def main(user_id):

@@ -7,13 +7,13 @@ endpoints:
     base_url: https://integrate.api.nvidia.com/v1
     api_key: ${NVIDIA_API_KEY}
 
+
 targets:
   gpt-5.4-nano:
     endpoint: openai
     format: openai
     model: gpt-5.4-nano
     
-
   nemotron-nano-9b-v2:
     endpoint: nvidia
     format: openai
