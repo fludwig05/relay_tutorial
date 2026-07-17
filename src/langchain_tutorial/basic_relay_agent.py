@@ -35,6 +35,9 @@ def get_current_weather(city: str) -> str:
 def save_user_information(information_name: str, information_value: str, runtime: ToolRuntime[Context]) -> str:
     """Save persistent information for the current user."""
     if runtime.store is None:
+
+        # send an event that the memory store is unavailable
+        nemo_relay.scope.event("memory.unavailable", data={"operation": "write"})
         return "Memory store is unavailable."
 
     user_id = runtime.context.user_id
