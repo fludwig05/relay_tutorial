@@ -1,5 +1,6 @@
 # nemo-relay imports
 from nemo_relay.integrations.langchain import NemoRelayMiddleware, NemoRelayCallbackHandler
+from relay_utils.relay_interceptors import rewrite_prompt, timing_interceptor
 from nemo_relay import plugin
 import nemo_relay
 
@@ -129,43 +130,20 @@ def agent_loop(agent, user_id):
         scope_handle = nemo_relay.scope.push("agent-turn", nemo_relay.ScopeType.Agent, input=scope_input)
 
         # initialize the response and error
-        response, error = None, None
+        response = None
 
-        try:
+        # send an event that the agent input has been received
+        nemo_relay.scope.event("agent.input.received", handle=scope_handle)
 
-                # send an event that the agent input has been received
-                nemo_relay.scope.event("agent.input.received", handle=scope_handle)
-
-                # run the agent
-                response = agent.invoke(create_user_message(user_input), context=context, 
+        # run the agent
+        response = agent.invoke(create_user_message(user_input), context=context, 
                                         config={**memory_config, "callbacks": [NemoRelayCallbackHandler()]})
             
-                final_message = response["messages"][-1]
-                print(f"Assistant: {final_message.content}\n")  
+        final_message = response["messages"][-1]
+        print(f"Assistant: {final_message.content}\n")  
 
-                # send an event that the agent response has been generated
-                nemo_relay.scope.event("agent.response.generated", handle=scope_handle)           
-
-        except Exception as exc:
-
-            # send an event that the agent failed
-            nemo_relay.scope.event("agent.failed", handle=scope_handle, data={"error": str(exc)})
-
-        finally:
-
-            # initialize the output
-            output = {}
-
-            # set the output
-            if response is not None:
-                output["assistant_response"] = response["messages"][-1].content
-
-            # set the error
-            if error is not None:
-                output["error"] = error
-
-            # pop the scope and set the output
-            nemo_relay.scope.pop(scope_handle, output=output)   
+        # send an event that the agent response has been generated
+        nemo_relay.scope.event("agent.response.generated", handle=scope_handle)
 
 
 async def main(user_id):
@@ -177,8 +155,15 @@ async def main(user_id):
     config = plugin.PluginConfig()
 
     # initialize the plugin
-    report = await plugin.initialize(config)
-    print(report)
+    _ = await plugin.initialize(config)
+
+    # add a request interceptor
+    nemo_relay.intercepts.register_llm_request(name="rewrite-prompt", priority=9,
+                                               break_chain=False, fn=rewrite_prompt) 
+
+    # add a request interceptor
+    nemo_relay.intercepts.register_llm_execution(name="time the execution", priority=10,
+                                                 fn=timing_interceptor)
 
     # define a model
     model = ChatOpenAI(model="demo", api_key="dummy", base_url="http://localhost:4000/v1")
@@ -192,18 +177,12 @@ async def main(user_id):
     # define the system prompt
     system_prompt = "You are a helpful assistant that can save and retrieve information for the current user."
 
-    try:
-
-        # create an agent
-        agent = create_agent(model=model, tools=[get_current_weather, save_user_information, get_user_information], checkpointer=checkpointer, 
+    # create an agent
+    agent = create_agent(model=model, tools=[get_current_weather, save_user_information, get_user_information], checkpointer=checkpointer, 
                             store=store, context_schema=Context, system_prompt=system_prompt, middleware=[NemoRelayMiddleware()])
 
-        # run the agent loop
-        agent_loop(agent, user_id)
-    
-    finally:
-
-        plugin.clear()
+    # run the agent loop
+    agent_loop(agent, user_id)
 
 
 if __name__ == '__main__':

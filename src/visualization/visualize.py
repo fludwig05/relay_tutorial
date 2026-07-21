@@ -132,6 +132,8 @@ if __name__ == "__main__":
     # build scope tree
     roots = build_scope_tree(scopes)
 
+    # create a simplified trace tree which can be written to html
     trace_roots = [simplify(build_trace_tree(root)) for root in roots]
 
+    # write the trace tree to html
     output_path = write_trace_html(trace_roots,Path("output") / "trace.html", title="Agent Trace")

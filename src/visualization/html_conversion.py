@@ -424,7 +424,7 @@ def _render_document(
         <header class="page-header">
             <h1 class="page-title">{html.escape(title)}</h1>
             <p class="page-subtitle">
-                Semantic execution trace with framework internals removed.
+                Semantic Execution Trace with.
             </p>
         </header>
 
