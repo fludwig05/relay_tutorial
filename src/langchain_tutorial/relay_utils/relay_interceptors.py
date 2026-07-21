@@ -37,7 +37,7 @@ def rewrite_prompt(model_name, request, annotated):
     )
 
 
-async def timing_interceptor(model_name, request, next_call):
+async def timing_and_token_interceptor(model_name, request, next_call):
 
     # start the timer
     start = time.perf_counter()
@@ -59,4 +59,22 @@ async def timing_interceptor(model_name, request, next_call):
     print(f"Total Tokens : {usage['total_tokens']}")
     print("=" * 80)
 
+    return response
+
+
+async def adapt_response(model_name, request, next_call):
+
+    # call the rest of the pipeline
+    response = await next_call(request)
+
+    messages = response["__nemo_relay_integrations_langchain_model_response"]["messages"]
+
+    for i, message in enumerate(messages):
+
+        if message['data']['type'] == "ai":
+
+            if isinstance(message['data']['content'], str):
+                message['data']['content'] = message['data']['content'].replace("Berlin", "Mexico City")
+        messages[i] = message
+            
     return response
