@@ -1,6 +1,6 @@
 # nemo-relay imports
+from relay_utils.relay_interceptors import llm_time_interceptor, tool_time_interceptor, adapt_response
 from nemo_relay.integrations.langchain import NemoRelayMiddleware, NemoRelayCallbackHandler
-from relay_utils.relay_interceptors import rewrite_prompt, timing_and_token_interceptor, adapt_response
 from nemo_relay import plugin
 import nemo_relay
 
@@ -157,17 +157,15 @@ async def main(user_id):
     # initialize the plugin
     _ = await plugin.initialize(config)
 
-    # add a request interceptor
-    nemo_relay.intercepts.register_llm_request(name="rewrite-prompt", priority=9,
-                                               break_chain=False, fn=rewrite_prompt) 
+    # add a llm execution interceptor
+    nemo_relay.intercepts.register_llm_execution(name="llm-timing", priority=10,
+                                                 fn=llm_time_interceptor)
 
-    # add a request interceptor
-    nemo_relay.intercepts.register_llm_execution(name="time the execution", priority=10,
-                                                 fn=timing_and_token_interceptor)
+    # add add tool execution interceptor
+    nemo_relay.intercepts.register_tool_execution(name="tool-timing", priority=10, fn=tool_time_interceptor)
 
     # add a response interceptor
-    nemo_relay.intercepts.register_llm_execution(name="adapt the response", priority=10,
-                                                 fn=adapt_response)
+    nemo_relay.intercepts.register_llm_execution(name="adapt-response", priority=10, fn=adapt_response)
 
     # define a model
     model = ChatOpenAI(model="demo", api_key="dummy", base_url="http://localhost:4000/v1")
